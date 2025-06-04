@@ -1,0 +1,154 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:company",
+  "creation": "2025-03-08 10:49:22.977283",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "company",
+    "company_pin",
+    "active",
+    "column_break_toml",
+    "server_base_url",
+    "api_key",
+    "endpoints_section",
+    "invoice_inclusive",
+    "invoice_exclusive",
+    "query_endpoint",
+    "column_break_vvhc",
+    "credit_note_inclusive",
+    "credit_note_exclusive",
+    "health_check_endpoint",
+    "section_break_aves",
+    "enable_auto_signing"
+  ],
+  "fields": [
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1,
+      "unique": 1
+    },
+    {
+      "fetch_from": "company.tax_id",
+      "fieldname": "company_pin",
+      "fieldtype": "Data",
+      "label": "Company PIN"
+    },
+    {
+      "fieldname": "column_break_toml",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "server_base_url",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Server Base URL",
+      "reqd": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "enable_auto_signing",
+      "fieldtype": "Check",
+      "label": "Enable Auto-Signing"
+    },
+    {
+      "description": "eg /esd/queryinvoice",
+      "fieldname": "query_endpoint",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Query URL",
+      "reqd": 1
+    },
+    {
+      "description": "/esd/health",
+      "fieldname": "health_check_endpoint",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Health Check URL",
+      "reqd": 1
+    },
+    {
+      "fieldname": "endpoints_section",
+      "fieldtype": "Section Break",
+      "label": "Endpoints"
+    },
+    {
+      "fieldname": "column_break_vvhc",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "section_break_aves",
+      "fieldtype": "Section Break"
+    },
+    {
+      "default": "0",
+      "fieldname": "active",
+      "fieldtype": "Check",
+      "label": "Active"
+    },
+    {
+      "description": "/api/sign?invoice+1\n\n",
+      "fieldname": "invoice_inclusive",
+      "fieldtype": "Data",
+      "label": "Invoice URL Item Price Inclusive",
+      "reqd": 1
+    },
+    {
+      "description": "/api/sign?invoice+2\n",
+      "fieldname": "invoice_exclusive",
+      "fieldtype": "Data",
+      "label": "Invoice URL Item Price Exclusive",
+      "reqd": 1
+    },
+    {
+      "description": "/api/sign?credit-note+1",
+      "fieldname": "credit_note_inclusive",
+      "fieldtype": "Data",
+      "label": "Credit Note URL Item Price Inclusive",
+      "reqd": 1
+    },
+    {
+      "description": "/api/sign?credit-note+2",
+      "fieldname": "credit_note_exclusive",
+      "fieldtype": "Data",
+      "label": "Credit Note URL Item Price Exclusive",
+      "reqd": 1
+    },
+    {
+      "fieldname": "api_key",
+      "fieldtype": "Password",
+      "label": "API Key",
+      "reqd": 1
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2025-03-31 17:13:08.068435",
+  "modified_by": "Administrator",
+  "module": "Tims Incotex",
+  "name": "Tims Incotex Settings",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

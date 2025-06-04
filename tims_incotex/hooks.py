@@ -10,6 +10,20 @@ app_license = "agpl-3.0"
 
 # required_apps = []
 
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            [
+                "name",
+                "in",
+                ("Sales Invoice Item-custom_hs_code",),
+            ]
+        ],
+    },
+]
+
+
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
@@ -132,34 +146,19 @@ app_license = "agpl-3.0"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+    "Sales Invoice": {
+        "on_submit": "tims_incotex.tims_incotex.api.sales_invoice.on_submit",
+        "before_save": "tims_incotex.tims_incotex.api.sales_invoice.before_save",
+        "before_cancel": "tims_incotex.tims_incotex.api.sales_invoice.prevent_cancel_signed_invoice",
+    }
+}
 
 # Scheduled Tasks
 # ---------------
-
-# scheduler_events = {
-# 	"all": [
-# 		"tims_incotex.tasks.all"
-# 	],
-# 	"daily": [
-# 		"tims_incotex.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"tims_incotex.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"tims_incotex.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"tims_incotex.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "all": ["tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"]
+}
 
 # Testing
 # -------
@@ -236,4 +235,3 @@ app_license = "agpl-3.0"
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
