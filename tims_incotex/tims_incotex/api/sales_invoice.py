@@ -43,7 +43,7 @@ class TimsInvoice:
             reference_docname=self.invoice.name,
             reference_doctype="Sales Invoice",
         )
-        frappe.throw(str(payload))
+
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=10)
 
@@ -76,7 +76,7 @@ class TimsInvoice:
         """Prepare invoice data for TIMS API."""
         return {
             "invoice_date": self.invoice.posting_date.strftime("%d-%m-%Y"),
-            "invoice_number": format_invoice_number(self.invoice.name),
+            "invoice_number": self.invoice.invoice_number,
             "invoice_pin": self.settings["company_pin"],
             "customer_pin": self.invoice.tax_id or "",
             "customer_exid": "",
@@ -97,7 +97,9 @@ class TimsInvoice:
         """Update invoice with TIMS API response using set_value."""
         frappe.db.set_value(
             "Sales Invoice",
-            response_data["invoice_number"],
+            {
+                "invoice_number": response_data["invoice_number"],
+            },
             {
                 "etr_serial_number": response_data.get("cu_serial_number"),
                 "etr_invoice_number": response_data.get("cu_invoice_number"),
@@ -187,9 +189,8 @@ def get_qr_code(data: str) -> str:
         str: The QR Code.
     """
     qr_code_bytes = get_qr_code_bytes(data, format="PNG")
-    base_64_string = bytes_to_base64_string(qr_code_bytes)
-
-    return add_file_info(base_64_string)
+    base64_string = bytes_to_base64_string(qr_code_bytes)
+    return add_file_info(base64_string)
 
 
 def add_file_info(data: str) -> str:
@@ -202,10 +203,8 @@ def add_file_info(data: str) -> str:
 def get_qr_code_bytes(data: bytes | str, format: str = "PNG") -> bytes:
     """Create a QR code and return the bytes."""
     img = qrcode.make(data)
-
     buffered = BytesIO()
     img.save(buffered, format=format)
-
     return buffered.getvalue()
 
 
@@ -298,19 +297,31 @@ def currency_code(currency):
     return "Ksh"
 
 
-def format_invoice_number(invoice_number):
-    """Format the invoice number to ensure there is no special charaters"""
-    return re.sub(r"[^a-zA-Z0-9]", "", invoice_number)
+def format_invoice_number(doc, method=None):
+    """Format the invoice number to ensure there are no special characters."""
+    invoice_number = re.sub(r"[^a-zA-Z0-9]", "", doc.name)
+
+    frappe.db.set_value(
+        "Sales Invoice",
+        doc.name,
+        "invoice_number",
+        invoice_number,
+        update_modified=False,
+    )
+    doc.invoice_number = invoice_number
 
 
 def inclusive_invoice(invoice):
     """Determine if the invoice is inclusive or exclusive based on the TIMS settings."""
     inclusive = False
-    taxes = invoice.taxes[0]
-    if taxes.included_in_print_rate == 1:
-        inclusive = True
-    else:
-        inclusive = False
+
+    if invoice.taxes:
+        taxes = invoice.taxes[0]
+        if taxes.included_in_print_rate == 1:
+            inclusive = True
+        else:
+            inclusive = False
+
     return inclusive
 
 
@@ -331,10 +342,10 @@ def is_valid_kra_pin(pin: str) -> bool:
 
 def before_save(doc, method):
     remove_tims(doc)
-    """Validate KRA PIN before saving the document."""
     if doc.customer and doc.tax_id:
         if not is_valid_kra_pin(doc.tax_id):
             frappe.throw("Invalid KRA PIN format. Please enter a valid KRA PIN.")
+    format_invoice_number(doc)
     get_hs_code_before_save(doc)
 
 
