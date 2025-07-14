@@ -399,27 +399,30 @@ def get_hs_code_item_tax(item_code, item_tax_template_name=None):
     """
     hs_code = ""
 
+    # 1. Check specific template
     if item_tax_template_name:
-        tax_row = frappe.db.get_value(
-            "Item Tax", {"item_tax_template": item_tax_template_name}, ["tims_hscode"]
+        hs_code = frappe.db.get_value(
+            "Item Tax",
+            {"parent": item_code, "item_tax_template": item_tax_template_name},
+            "tims_hscode",
         )
-        if tax_row:
-            return tax_row
+        if hs_code:
+            return hs_code
 
-    # Fallback: Get first Item Tax record for item
+    # 2. Check any item tax for this item
     item_tax = frappe.get_all(
         "Item Tax", filters={"parent": item_code}, fields=["tims_hscode"], limit=1
     )
     if item_tax and item_tax[0].tims_hscode:
         return item_tax[0].tims_hscode
 
-    # Fallback: Get item group tax template
-    item_doc = frappe.get_doc("Item", item_code)
-    item_group = item_doc.item_group
-    group_tax = frappe.get_all(
-        "Item Tax", filters={"parent": item_group}, fields=["tims_hscode"], limit=1
-    )
-    if group_tax and group_tax[0].tims_hscode:
-        return group_tax[0].tims_hscode
+    # 3. Check item group taxes
+    item_group = frappe.db.get_value("Item", item_code, "item_group")
+    if item_group:
+        group_tax = frappe.get_all(
+            "Item Tax", filters={"parent": item_group}, fields=["tims_hscode"], limit=1
+        )
+        if group_tax and group_tax[0].tims_hscode:
+            return group_tax[0].tims_hscode
 
     return hs_code
