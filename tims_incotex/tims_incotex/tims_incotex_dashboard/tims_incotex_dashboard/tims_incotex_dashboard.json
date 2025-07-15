@@ -1,0 +1,48 @@
+{
+ "cards": [
+  {
+   "card": "Queued Requests"
+  },
+  {
+   "card": "Total Successful Requests"
+  },
+  {
+   "card": "Total Failed Requests"
+  },
+  {
+   "card": "Pending Invoice Submissions"
+  },
+  {
+   "card": "Signed Invoices"
+  },
+  {
+   "card": "Failed Invoices"
+  },
+  {
+   "card": "Pending Credit Notes"
+  },
+  {
+   "card": "Successful Credit Notes"
+  },
+  {
+   "card": "Failed Credit Notes"
+  }
+ ],
+ "charts": [
+  {
+   "width": "Half"
+  }
+ ],
+ "creation": "2025-07-15 17:06:21.920058",
+ "dashboard_name": "TIMS Incotex Dashboard",
+ "docstatus": 0,
+ "doctype": "Dashboard",
+ "idx": 0,
+ "is_default": 0,
+ "is_standard": 1,
+ "modified": "2025-07-15 17:53:10.404751",
+ "modified_by": "Administrator",
+ "module": "Tims Incotex",
+ "name": "TIMS Incotex Dashboard",
+ "owner": "Administrator"
+}

@@ -160,7 +160,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 scheduler_events = {
-    "all": ["tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"]
+    "cron": {
+        "0 * * * *": [
+            "tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"
+        ],
+    }
 }
 
 # Testing
