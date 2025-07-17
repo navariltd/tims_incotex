@@ -279,7 +279,10 @@ def get_endpoint(invoice, company):
 
 def is_active(company):
     settings = get_tims_settings(company)
-    return settings.get("active")
+    if settings:
+        return settings.get("active")
+    else:
+        return None
 
 
 def tax_amount(invoice):
