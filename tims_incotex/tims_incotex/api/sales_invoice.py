@@ -46,31 +46,29 @@ class TimsInvoice:
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=10)
-
+            response.raise_for_status()
             response_data = response.json()
 
-            description = response_data.get("description")
-            (
+            if response_data.get("description") == "Signed successfully.":
                 integration_request.handle_success(json.dumps(response_data))
-                if description and description == "Signed successfully."
-                else integration_request.handle_failure(response_data)
-            )
-
-            if description and description == "Signed successfully.":
                 self._update_invoice(response_data)
             else:
-                frappe.msgprint(
-                    f"Failed to sign invoice: {response_data.get('error_status')}"
-                )
+                error_msg = response_data.get("error_status", "Unknown error")
+                frappe.msgprint(f"Failed to sign invoice: {error_msg}")
+
+                failure_data = {"error": error_msg, "response": response_data}
+                integration_request.handle_failure(failure_data)
                 self.handle_failure(response_data)
 
         except requests.exceptions.RequestException as e:
-            frappe.msgprint(f"API request failed: {e}", alert=True)
-            self._log_error(str(e))
-            integration_request.handler_failure(str(e))
+            error_msg = f"API request failed: {str(e)}"
+            frappe.msgprint(error_msg, alert=True)
+            self._log_error(error_msg)
+
+            failure_data = {"error": error_msg, "response": None}
+            integration_request.handle_failure(failure_data)
 
     def _prepare_payload(self):
-        # rel_doc_number = self.invoice.custom_relevant_invoice_number if self.invoice.is_return else ""
         rel_doc_number = get_relevant_invoice_number(self.invoice)
 
         """Prepare invoice data for TIMS API."""
