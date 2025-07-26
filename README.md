@@ -54,7 +54,7 @@ In the **Item Doctype**:
 
 ![image (9)](https://github.com/user-attachments/assets/ee58bcb5-1a63-4176-881c-cd98847933bf)
 
-- if you have many related items, you can opt tpo add teh item tax template and HS code per Item Group, we have similar taxes table there.
+- if you have many related items, you can opt to add the item tax template and HS code per Item Group, we have similar taxes table there.
 
 When you create a Sales Invoice:
 
@@ -133,7 +133,5 @@ This ensures that each item sent to KRA via INCOTEX has the correct HS Code as r
     - A response is received and recorded, similar to a sales invoice.
 
 > ⚠️ If you're creating a **standalone credit note**, **manually enter** the `CU Invoice Number` from the original Sales Invoice to ensure successful submission.
-> ⚠️
-> Remember, when creating an invoice ID, it must not have any special characters, so you will have to define a new name. If not, you will create a new field, which will have a new sequence that can be used as an invoice number on the INCOTEX while maintaining the customer's normal numbering.(This has yet to be done.)
 
 Feel free to contribute.
