@@ -4,5 +4,5 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-tims_incotex.tims_incotex.patches.create_invoice_number
-tims_incotex.tims_incotex.patches.update_filed_invoices
+# tims_incotex.tims_incotex.patches.create_invoice_number
+# tims_incotex.tims_incotex.patches.update_filed_invoices
