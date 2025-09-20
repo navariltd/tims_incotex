@@ -154,7 +154,10 @@ doc_events = {
         "on_submit": "tims_incotex.tims_incotex.api.sales_invoice.on_submit",
         "before_save": "tims_incotex.tims_incotex.api.sales_invoice.before_save",
         "before_cancel": "tims_incotex.tims_incotex.api.sales_invoice.prevent_cancel_signed_invoice",
-    }
+    },
+    "Customer": {
+        "before_save": "tims_incotex.tims_incotex.overrides.customer.before_save"
+    },
 }
 
 # Scheduled Tasks

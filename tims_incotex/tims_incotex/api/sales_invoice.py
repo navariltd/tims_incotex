@@ -110,6 +110,7 @@ class TimsInvoice:
                 "cu_invoice_date": frappe.utils.today(),
                 "is_filed": 1,
             },
+            update_modified=False,
         )
 
     def handle_failure(self, response_data):
