@@ -1,0 +1,22 @@
+{
+ "app": "tims_incotex",
+ "bg_color": "blue",
+ "creation": "2026-02-06 16:30:37.496609",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "Link",
+ "idx": 0,
+ "label": "TIMS Incotex",
+ "link": "/tims_incotext",
+ "link_to": "Tims Incotex",
+ "link_type": "Workspace Sidebar",
+ "modified": "2026-02-06 16:33:18.077454",
+ "modified_by": "Administrator",
+ "name": "TIMS Incotex",
+ "owner": "Administrator",
+ "parent_icon": "",
+ "restrict_removal": 0,
+ "roles": [],
+ "standard": 1
+}
