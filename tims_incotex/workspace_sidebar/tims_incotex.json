@@ -1,0 +1,87 @@
+{
+ "app": "tims_incotex",
+ "creation": "2026-02-06 16:14:45.140279",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "for_user": "Administrator",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "layout-dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Dashboard",
+   "link_to": "TIMS Incotex Dashboard",
+   "link_type": "Dashboard",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "computer",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Sale Invoice",
+   "link_to": "Sales Invoice",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "settings",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Setup",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Tims Incotex Settings",
+   "link_to": "Tims Incotex Settings",
+   "link_type": "DocType",
+   "navigate_to_tab": "",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Item Tax Template",
+   "link_to": "Item Tax Template",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "tool",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Intergartion Request",
+   "link_to": "Integration Request",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-02-06 16:55:02.907342",
+ "modified_by": "emiliocliff@gmail.com",
+ "module": "Tims Incotex",
+ "name": "Tims Incotex",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Tims Incotex"
+}
