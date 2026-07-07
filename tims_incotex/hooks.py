@@ -8,23 +8,9 @@ app_license = "agpl-3.0"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["erpnext", "csf_ke"]
 
-fixtures = [
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "name",
-                "in",
-                (
-                    "Sales Invoice Item-custom_hs_code",
-                    "Sales Invoice-custom_invoice_number",
-                ),
-            ]
-        ],
-    },
-]
+# fixtures = []
 
 
 # Each item in the list will be shown as an app in the apps page
@@ -150,24 +136,20 @@ doctype_js = {"Sales Invoice": "public/js/sales_invoice.js"}
 # Hook on document methods and events
 
 doc_events = {
-    "Sales Invoice": {
-        "on_submit": "tims_incotex.tims_incotex.api.sales_invoice.on_submit",
-        "before_save": "tims_incotex.tims_incotex.api.sales_invoice.before_save",
-        "before_cancel": "tims_incotex.tims_incotex.api.sales_invoice.prevent_cancel_signed_invoice",
-    },
-    "Customer": {
-        "before_save": "tims_incotex.tims_incotex.overrides.customer.before_save"
-    },
+	"Sales Invoice": {
+		"on_submit": "tims_incotex.tims_incotex.api.sales_invoice.on_submit",
+		"before_save": "tims_incotex.tims_incotex.api.sales_invoice.before_save",
+		"before_cancel": "tims_incotex.tims_incotex.api.sales_invoice.prevent_cancel_signed_invoice",
+	},
+	"Customer": {"before_save": "tims_incotex.tims_incotex.overrides.customer.before_save"},
 }
 
 # Scheduled Tasks
 # ---------------
 scheduler_events = {
-    "cron": {
-        "0 * * * *": [
-            "tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"
-        ],
-    }
+	"cron": {
+		"0 * * * *": ["tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"],
+	}
 }
 
 # Testing
