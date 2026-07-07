@@ -8,23 +8,9 @@ app_license = "agpl-3.0"
 # Apps
 # ------------------
 
-required_apps = ["erpnext"]
+required_apps = ["erpnext", "csf_ke"]
 
-fixtures = [
-    {
-        "doctype": "Custom Field",
-        "filters": [
-            [
-                "name",
-                "in",
-                (
-                    "Sales Invoice Item-custom_hs_code",
-                    "Sales Invoice-custom_invoice_number",
-                ),
-            ]
-        ],
-    },
-]
+# fixtures = []
 
 
 # Each item in the list will be shown as an app in the apps page
