@@ -21,14 +21,25 @@ class TimsInvoice:
 	def sign_invoice(self):
 		"""Send invoice data to TIMS API and update response."""
 		if self.invoice.is_opening == "Yes":
-			frappe.msgprint("Opening invoices cannot be signed.", alert=True)
+			frappe.logger().info(f"Skipping TIMS signing for opening invoice {self.invoice.name}")
 			return
+
 		if self.invoice.etr_invoice_number:
-			frappe.msgprint("Invoice already signed.", alert=True)
+			frappe.logger().info(f"Invoice {self.invoice.name} already signed, skipping.")
 			return
 
-		endpoint = get_endpoint(self.invoice, company=self.invoice.company)
+		frappe.enqueue(
+			"tims_incotex.tims_incotex.api.sales_invoice.send_invoice_to_tims",
+			enqueue_after_commit=True,
+			job_name=f"Sign Invoice {self.invoice.name}",
+			invoice_name=self.invoice.name,
+			company=self.invoice.company,
+			queue="default",
+		)
 
+	def _send_to_api(self):
+		"""Send invoice data to TIMS API and handle response."""
+		endpoint = get_endpoint(self.invoice, company=self.invoice.company)
 		url = f"{self.settings['api_url']}{endpoint}"
 		headers = {
 			"Content-Type": "application/json",
@@ -36,18 +47,10 @@ class TimsInvoice:
 		}
 		payload = self._prepare_payload()
 
-		frappe.enqueue(
-			self.send_invoice_to_tims,
-			enqueue_after_commit=True,
-			job_name=f"Sign Invoice {self.invoice.name}",
-			url=url,
-			headers=headers,
-			payload=payload,
-			queue="default",
-		)
+		if not url or not headers or not payload:
+			frappe.log_error("Missing URL, headers, or payload for TIMS API.", "TimsInvoice Error")
+			return
 
-	def send_invoice_to_tims(self, url, headers, payload):
-		"""Send invoice data to TIMS API and handle response."""
 		integration_request = create_request_log(
 			data=payload,
 			is_remote_request=True,
@@ -58,12 +61,8 @@ class TimsInvoice:
 			reference_doctype="Sales Invoice",
 		)
 
-		if not url or not headers or not payload:
-			frappe.log_error("Missing URL, headers, or payload for TIMS API.", "TimsInvoice Error")
-			return
-
 		try:
-			response = requests.post(url, json=payload, headers=headers, timeout=10)
+			response = requests.post(url, json=payload, headers=headers, timeout=(5, 30))
 			response.raise_for_status()
 			response_data = response.json()
 
@@ -73,19 +72,19 @@ class TimsInvoice:
 			else:
 				error_msg = response_data.get("error_status", "Unknown error")
 				failure_data = {"error": error_msg, "response": response_data}
-				integration_request.handle_failure(failure_data)
+				integration_request.handle_failure(json.dumps(failure_data))
 				self.handle_failure(response_data)
 
 		except requests.exceptions.RequestException as e:
 			error_msg = f"API request failed: {e!s}"
-			self._log_error(error_msg)
 			failure_data = {"error": error_msg, "response": None}
-			integration_request.handle_failure(failure_data)
+			integration_request.handle_failure(json.dumps(failure_data))
+			self._log_error(error_msg)
 
 	def _prepare_payload(self):
+		"""Prepare invoice data for TIMS API."""
 		rel_doc_number = get_relevant_invoice_number(self.invoice)
 
-		"""Prepare invoice data for TIMS API."""
 		return {
 			"invoice_date": self.invoice.posting_date.strftime("%d-%m-%Y"),
 			"invoice_number": self.invoice.invoice_number,
@@ -106,12 +105,10 @@ class TimsInvoice:
 		}
 
 	def _update_invoice(self, response_data):
-		"""Update invoice with TIMS API response using set_value."""
+		"""Update invoice with TIMS API response"""
 		frappe.db.set_value(
 			"Sales Invoice",
-			{
-				"invoice_number": response_data["invoice_number"],
-			},
+			self.invoice.name,
 			{
 				"etr_serial_number": response_data.get("cu_serial_number"),
 				"etr_invoice_number": response_data.get("cu_invoice_number"),
@@ -154,6 +151,19 @@ class TimsInvoice:
 		)
 
 
+def send_invoice_to_tims(invoice_name, company):
+	tims = TimsInvoice(invoice_name, company)
+	tims._send_to_api()
+
+
+def on_submit(doc, method):
+	"""Trigger invoice signing on submission."""
+	if frappe.db.exists("Tims Incotex Settings", {"company": doc.company}):
+		if is_active(doc.company):
+			invoice = TimsInvoice(doc.name, doc.company)
+			invoice.sign_invoice()
+
+
 @frappe.whitelist()
 def sign_single_invoice(invoice_name, company):
 	"""Public function to trigger invoice signing."""
@@ -176,58 +186,10 @@ def retry_pending_invoices():
 	)
 
 	for invoice_name in pending_invoices:
-		company = frappe.get_value("Sales Invoice", invoice_name, "company")
+		company = frappe.db.get_value("Sales Invoice", invoice_name, "company")
 		if is_active(company):
 			invoice = TimsInvoice(invoice_name, company)
 			invoice.sign_invoice()
-
-
-def on_submit(doc, method):
-	"""Trigger invoice signing on submission."""
-	if frappe.db.exists("Tims Incotex Settings", {"company": doc.company}):
-		if is_active(doc.company):
-			invoice = TimsInvoice(doc.name, doc.company)
-			invoice.sign_invoice()
-
-
-def get_qr_code(data: str) -> str:
-	"""Generate QR Code data
-
-	Args:
-	    data (str): The information used to generate the QR Code
-
-	Returns:
-	    str: The QR Code.
-	"""
-	qr_code_bytes = get_qr_code_bytes(data, format="PNG")
-	base64_string = bytes_to_base64_string(qr_code_bytes)
-	return add_file_info(base64_string)
-
-
-def add_file_info(data: str) -> str:
-	"""Add info about the file type and encoding.
-
-	This is required so the browser can make sense of the data."""
-	return f"data:image/png;base64, {data}"
-
-
-def get_qr_code_bytes(data: bytes | str, format: str = "PNG") -> bytes:
-	"""Create a QR code and return the bytes."""
-	img = qrcode.make(data)
-	buffered = BytesIO()
-	img.save(buffered, format=format)
-	return buffered.getvalue()
-
-
-def bytes_to_base64_string(data: bytes) -> str:
-	"""Convert bytes to a base64 encoded string."""
-	return b64encode(data).decode("utf-8")
-
-
-def format_time_for_invoice(time: str) -> str:
-	"""Format time to ensure leading zero for single-digit hours."""
-	hour, minute, second = time.split(":")
-	return f"{int(hour):02d}:{minute}:{second}"
 
 
 @frappe.whitelist()
@@ -270,6 +232,37 @@ def get_invoice(invoice, company):
 		}
 
 
+def get_qr_code(data: str) -> str:
+	"""Generate QR Code data."""
+	qr_code_bytes = get_qr_code_bytes(data, format="PNG")
+	base64_string = bytes_to_base64_string(qr_code_bytes)
+	return add_file_info(base64_string)
+
+
+def add_file_info(data: str) -> str:
+	"""Add info about the file type and encoding."""
+	return f"data:image/png;base64, {data}"
+
+
+def get_qr_code_bytes(data: bytes | str, format: str = "PNG") -> bytes:
+	"""Create a QR code and return the bytes."""
+	img = qrcode.make(data)
+	buffered = BytesIO()
+	img.save(buffered, format=format)
+	return buffered.getvalue()
+
+
+def bytes_to_base64_string(data: bytes) -> str:
+	"""Convert bytes to a base64 encoded string."""
+	return b64encode(data).decode("utf-8")
+
+
+def format_time_for_invoice(time: str) -> str:
+	"""Format time to ensure leading zero for single-digit hours."""
+	hour, minute, second = time.split(":")
+	return f"{int(hour):02d}:{minute}:{second}"
+
+
 def get_endpoint(invoice, company):
 	settings = get_tims_settings(company)
 	endpoint = ""
@@ -290,8 +283,7 @@ def is_active(company):
 	settings = get_tims_settings(company)
 	if settings:
 		return settings.get("active")
-	else:
-		return None
+	return None
 
 
 def tax_amount(invoice):
@@ -338,16 +330,7 @@ def inclusive_invoice(invoice):
 
 
 def is_valid_kra_pin(pin: str) -> bool:
-	"""Checks if the string provided conforms to the pattern of a KRA PIN.
-	This function does not validate if the PIN actually exists, only that
-	it resembles a valid KRA PIN.
-
-	Args:
-	    pin (str): The KRA PIN to test
-
-	Returns:
-	    bool: True if input is a valid KRA PIN, False otherwise
-	"""
+	"""Checks if the string provided conforms to the pattern of a KRA PIN."""
 	pattern = r"^[a-zA-Z]{1}[0-9]{9}[a-zA-Z]{1}$"
 	return bool(re.match(pattern, pin))
 
