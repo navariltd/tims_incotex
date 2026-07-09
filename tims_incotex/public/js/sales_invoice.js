@@ -14,13 +14,15 @@ frappe.ui.form.on("Sales Invoice", {
 						callback: function (r) {
 							if (!r.exc) {
 								frappe.msgprint({
-									title: __("Success"),
-									message: __("Invoice submitted to TIMS."),
-									indicator: "green",
+									title: __("Message"),
+									indicator: "blue",
+									message: __("Invoice submission Queued."),
 								});
 								frm.reload_doc();
 							}
 						},
+						freeze: true,
+						freeze_message: __("Submitting invoice to TIMS..."),
 					});
 				},
 				__("Tims Actions")
@@ -68,6 +70,9 @@ frappe.ui.form.on("Sales Invoice", {
 				},
 				__("Tims Actions")
 			);
+		}
+		if (frm.doc.is_filed) {
+			frm.set_df_property("custom_relevant_invoice_number", "read_only", true);
 		}
 	},
 });
