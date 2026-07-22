@@ -8,8 +8,11 @@ import qrcode
 import requests
 from frappe import _
 from frappe.integrations.utils import create_request_log
+from frappe.utils import cint
 
 from tims_incotex.tims_incotex.utils import get_tims_settings
+
+SEND_INVOICE_TO_TIMS = "tims_incotex.tims_incotex.api.sales_invoice.send_invoice_to_tims"
 
 
 class TimsInvoice:
@@ -18,23 +21,27 @@ class TimsInvoice:
 		self.invoice = frappe.get_doc("Sales Invoice", invoice_name)
 		self.settings = get_tims_settings(company)
 
-	def sign_invoice(self):
-		"""Send invoice data to TIMS API and update response."""
+	def can_sign(self):
+		"""Return True if this invoice is eligible for TIMS signing."""
 		if self.invoice.is_opening == "Yes":
 			frappe.logger().info(f"Skipping TIMS signing for opening invoice {self.invoice.name}")
-			return
+			return False
 
 		if self.invoice.etr_invoice_number:
 			frappe.logger().info(f"Invoice {self.invoice.name} already signed, skipping.")
+			return False
+
+		return True
+
+	def sign_invoice(self, *, enqueue_after_commit=True):
+		"""Request TIMS signing by enqueueing a background job."""
+		if not self.can_sign():
 			return
 
-		frappe.enqueue(
-			"tims_incotex.tims_incotex.api.sales_invoice.send_invoice_to_tims",
-			enqueue_after_commit=True,
-			job_name=f"Sign Invoice {self.invoice.name}",
-			invoice_name=self.invoice.name,
-			company=self.invoice.company,
-			queue="default",
+		enqueue_invoice_signing(
+			self.invoice.name,
+			self.invoice.company,
+			enqueue_after_commit=enqueue_after_commit,
 		)
 
 	def _send_to_api(self):
@@ -151,8 +158,24 @@ class TimsInvoice:
 		)
 
 
+def enqueue_invoice_signing(invoice_name, company, *, enqueue_after_commit=False):
+	"""Queue TIMS signing for an invoice. Shared by submit, UI, and retry paths."""
+	frappe.enqueue(
+		SEND_INVOICE_TO_TIMS,
+		enqueue_after_commit=enqueue_after_commit,
+		job_name=f"Sign Invoice {invoice_name}",
+		invoice_name=invoice_name,
+		company=company,
+		queue="default",
+		timeout=300,
+	)
+
+
 def send_invoice_to_tims(invoice_name, company):
+	"""Background worker: load invoice and send it to TIMS."""
 	tims = TimsInvoice(invoice_name, company)
+	if not tims.can_sign():
+		return
 	tims._send_to_api()
 
 
@@ -160,36 +183,46 @@ def on_submit(doc, method):
 	"""Trigger invoice signing on submission."""
 	if frappe.db.exists("Tims Incotex Settings", {"company": doc.company}):
 		if is_active(doc.company):
-			invoice = TimsInvoice(doc.name, doc.company)
-			invoice.sign_invoice()
+			TimsInvoice(doc.name, doc.company).sign_invoice(enqueue_after_commit=True)
 
 
 @frappe.whitelist()
 def sign_single_invoice(invoice_name, company):
 	"""Public function to trigger invoice signing."""
 	if is_active(company):
-		invoice = TimsInvoice(invoice_name, company)
-		invoice.sign_invoice()
+		TimsInvoice(invoice_name, company).sign_invoice(enqueue_after_commit=True)
 
 
 @frappe.whitelist()
-def retry_pending_invoices():
-	"""Retry signing invoices that failed."""
+def retry_pending_invoices(batch_size=100):
+	"""Enqueue a limited batch of failed/unsigned invoices for TIMS signing.
+
+	Avoids loading full Sales Invoice docs in the scheduler job so large
+	backlogs do not hit the RQ job timeout. Eligibility is re-checked in the worker.
+	"""
 	pending_invoices = frappe.get_all(
 		"Sales Invoice",
 		filters={
 			"docstatus": 1,
 			"is_opening": "No",
 			"custom_signing_status": ["in", ["Failed", ""]],
+			"etr_invoice_number": ["in", ["", None]],
 		},
-		pluck="name",
+		fields=["name", "company"],
+		order_by="modified desc",
+		limit_page_length=cint(batch_size),
 	)
 
-	for invoice_name in pending_invoices:
-		company = frappe.db.get_value("Sales Invoice", invoice_name, "company")
-		if is_active(company):
-			invoice = TimsInvoice(invoice_name, company)
-			invoice.sign_invoice()
+	active_companies = {}
+	for inv in pending_invoices:
+		company = inv.company
+		if company not in active_companies:
+			active_companies[company] = bool(is_active(company))
+
+		if not active_companies[company]:
+			continue
+
+		enqueue_invoice_signing(inv.name, company)
 
 
 @frappe.whitelist()
