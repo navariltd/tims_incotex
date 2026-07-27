@@ -148,7 +148,7 @@ doc_events = {
 # ---------------
 scheduler_events = {
 	"cron": {
-		"0 * * * *": ["tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"],
+		"30 * * * *": ["tims_incotex.tims_incotex.api.sales_invoice.retry_pending_invoices"],
 	}
 }
 
