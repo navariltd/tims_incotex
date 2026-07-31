@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from base64 import b64encode
 from io import BytesIO
 
@@ -449,3 +450,39 @@ def get_hs_code_item_tax(item_code, item_tax_template_name=None):
 			return group_tax[0].tims_hscode
 
 	return hs_code
+
+
+def batched(invoices: list[str], size: int):
+	for i in range(0, len(invoices), size):
+		yield i // size + 1, invoices[i : i + size]
+
+
+@frappe.whitelist()
+def retry_pending_invoices_with_delay(batch_size=100):
+	pending_invoices = frappe.get_all(
+		"Sales Invoice",
+		filters={
+			"docstatus": 1,
+			"is_opening": "No",
+			"custom_signing_status": ["in", ["Failed", ""]],
+			"etr_invoice_number": ["in", ["", None]],
+		},
+		fields=["name", "company"],
+		order_by="modified desc",
+		limit_page_length=cint(500),
+	)
+
+	for batch_number, batch_invoices in batched(pending_invoices, batch_size):
+		frappe.enqueue(
+			"tims_incotex.tims_incotex.api.sales_invoice.send_invoice_batch_to_tims",
+			invoice_list=batch_invoices,
+			queue="default",
+			timeout=600,
+			job_name=f"Retry TIMS invoices {batch_number}",
+		)
+		time.sleep(20)
+
+
+def send_invoice_batch_to_tims(invoice_list):
+	for invoice in invoice_list:
+		send_invoice_to_tims(invoice.name, invoice.company)
