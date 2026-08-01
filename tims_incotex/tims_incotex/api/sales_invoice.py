@@ -458,7 +458,7 @@ def batched(invoices: list[str], size: int):
 
 
 @frappe.whitelist()
-def retry_pending_invoices_with_delay(batch_size=100):
+def retry_pending_invoices_with_delay(batch_size=20):
 	pending_invoices = frappe.get_all(
 		"Sales Invoice",
 		filters={
