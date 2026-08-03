@@ -18,6 +18,7 @@ def get_tims_settings(company):
         "username": settings.get_password(fieldname="api_key", raise_exception=False),
         "api_key": settings.get_password(fieldname="api_key", raise_exception=False),
         "active": settings.active,
+        "sign_on_submit": settings.custom_sign_on_submit,
         "invoice_inclusive": settings.invoice_inclusive,
         "invoice_exclusive": settings.invoice_exclusive,
         "credit_note_inclusive": settings.credit_note_inclusive,
