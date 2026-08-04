@@ -34,8 +34,12 @@ class TimsInvoice:
 		return True
 
 	def sign_invoice(self, *, enqueue_after_commit=True):
-		"""Request TIMS signing by enqueueing a background job."""
+		"""Request TIMS signing immediately, or by enqueueing a background job."""
 		if not self.can_sign():
+			return
+
+		if self.settings.get("sign_on_submit"):
+			self._send_to_api()
 			return
 
 		enqueue_invoice_signing(
