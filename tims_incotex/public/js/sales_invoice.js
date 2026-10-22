@@ -29,6 +29,50 @@ frappe.ui.form.on("Sales Invoice", {
 			);
 		}
 
+		// Sent, but TIMS never confirmed it: it may already be signed. Check TIMS first; sending
+		// again is a separate, explicit choice.
+		if (frm.doc.docstatus === 1 && frm.doc.custom_signing_status === "Unconfirmed") {
+			frm.add_custom_button(
+				__("Check on TIMS"),
+				function () {
+					frappe.call({
+						method: "tims_incotex.tims_incotex.api.sales_invoice.check_single_invoice",
+						args: { invoice_name: frm.doc.name },
+						freeze: true,
+						freeze_message: __("Asking TIMS about this invoice..."),
+						callback: function (r) {
+							if (!r.exc) {
+								frm.reload_doc();
+							}
+						},
+					});
+				},
+				__("Tims Actions")
+			);
+			frm.add_custom_button(
+				__("Send to TIMS again"),
+				function () {
+					frappe.confirm(
+						__(
+							"TIMS may already hold this invoice. Sending it again can create a second TIMS invoice. Send only after checking the device. Send again?"
+						),
+						function () {
+							frappe.call({
+								method: "tims_incotex.tims_incotex.api.sales_invoice.sign_single_invoice",
+								args: { invoice_name: frm.doc.name, send_unconfirmed: 1 },
+								callback: function (r) {
+									if (!r.exc) {
+										frm.reload_doc();
+									}
+								},
+							});
+						}
+					);
+				},
+				__("Tims Actions")
+			);
+		}
+
 		// Show "Get e-Invoice" if already signed
 		if (frm.doc.docstatus === 1 && frm.doc.custom_signing_status === "Signed") {
 			frm.add_custom_button(

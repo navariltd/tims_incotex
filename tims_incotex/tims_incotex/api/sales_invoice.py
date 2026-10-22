@@ -8,11 +8,33 @@ import qrcode
 import requests
 from frappe import _
 from frappe.integrations.utils import create_request_log
-from frappe.utils import cint
+from frappe.utils import add_to_date, cint, now_datetime
+from urllib3.exceptions import NewConnectionError
 
 from tims_incotex.tims_incotex.utils import get_tims_settings
 
 SEND_INVOICE_TO_TIMS = "tims_incotex.tims_incotex.api.sales_invoice.send_invoice_to_tims"
+CHECK_INVOICE_ON_TIMS = "tims_incotex.tims_incotex.api.sales_invoice.check_invoice_on_tims"
+
+# Signing statuses. An invoice is only ever sent from one of SENDABLE, and the move to SUBMITTING is
+# taken under a row lock, so two workers (or a worker and the hourly retry) cannot both send it.
+SUBMITTING = "Submitting"
+UNCONFIRMED = "Unconfirmed"
+SIGNED = "Signed"
+FAILED = "Failed"
+SENDABLE = ("", "Pending", FAILED)
+
+# A send that started this long ago and never finished (worker killed mid-request) is checked on TIMS.
+STALE_SUBMITTING_MINUTES = 15
+
+# Requests errors raised before anything reached the device: safe to send again.
+NOT_SENT_ERRORS = (
+	requests.exceptions.ConnectTimeout,
+	requests.exceptions.URLRequired,
+	requests.exceptions.MissingSchema,
+	requests.exceptions.InvalidSchema,
+	requests.exceptions.InvalidURL,
+)
 
 
 class TimsInvoice:
@@ -39,7 +61,8 @@ class TimsInvoice:
 			return
 
 		if self.settings.get("sign_on_submit"):
-			self._send_to_api()
+			# Inside the submit transaction: the invoice row is already ours, so no separate commit.
+			self._send_to_api(commit_claim=False)
 			return
 
 		enqueue_invoice_signing(
@@ -48,8 +71,55 @@ class TimsInvoice:
 			enqueue_after_commit=enqueue_after_commit,
 		)
 
-	def _send_to_api(self):
-		"""Send invoice data to TIMS API and handle response."""
+	def _claim(self, allowed):
+		"""Move the invoice to Submitting if it is still in one of `allowed` and unsigned.
+
+		The row is read with a lock, so a second worker waits here and then sees Submitting.
+		"""
+		stored = frappe.db.get_value(
+			"Sales Invoice",
+			self.invoice.name,
+			["custom_signing_status", "etr_invoice_number"],
+			as_dict=True,
+			for_update=True,
+		)
+		if not stored or stored.etr_invoice_number:
+			return False
+		if (stored.custom_signing_status or "") not in allowed:
+			return False
+
+		frappe.db.set_value(
+			"Sales Invoice",
+			self.invoice.name,
+			{"custom_signing_status": SUBMITTING, "custom_tims_response_description": ""},
+			update_modified=False,
+		)
+		return True
+
+	def _send_to_api(self, *, commit_claim=True, allowed=SENDABLE):
+		"""Send invoice data to TIMS API and handle response.
+
+		Errors are split by whether the device may have signed the invoice:
+		- nothing was sent (bad URL, connection refused, connect timeout) or the device answered
+		  with a refusal: Failed, and the hourly retry sends it again;
+		- the request went out but no usable answer came back (read timeout, dropped connection,
+		  5xx, a body that is not JSON): Unconfirmed. It is never sent again automatically; the
+		  hourly job asks TIMS whether it holds the invoice instead.
+
+		In a background job the claim and the request log are committed together before the request,
+		so a worker killed mid-request leaves Submitting behind (checked on TIMS later, once its log
+		is old enough) instead of a status that would be sent again.
+		"""
+		if not self._claim(allowed):
+			return
+
+		missing = [item.item_code for item in self.invoice.items if not item.custom_hs_code]
+		if missing:
+			self._set_status(
+				FAILED, _("No TIMS HS code for item(s): {0}").format(", ".join(sorted(set(missing))))
+			)
+			return
+
 		endpoint = get_endpoint(self.invoice, company=self.invoice.company)
 		url = f"{self.settings['api_url']}{endpoint}"
 		headers = {
@@ -60,6 +130,7 @@ class TimsInvoice:
 
 		if not url or not headers or not payload:
 			frappe.log_error("Missing URL, headers, or payload for TIMS API.", "TimsInvoice Error")
+			self._set_status(FAILED, _("Missing URL, headers, or payload for TIMS API."))
 			return
 
 		integration_request = create_request_log(
@@ -71,26 +142,47 @@ class TimsInvoice:
 			reference_docname=self.invoice.name,
 			reference_doctype="Sales Invoice",
 		)
+		if commit_claim:
+			frappe.db.commit()  # nosemgrep: the claim must outlive a failed request
 
 		try:
 			response = requests.post(url, json=payload, headers=headers, timeout=(5, 30))
-			response.raise_for_status()
-			response_data = response.json()
-
-			if response_data.get("description") == "Signed successfully.":
-				integration_request.handle_success(json.dumps(response_data))
-				self._update_invoice(response_data)
-			else:
-				error_msg = response_data.get("error_status", "Unknown error")
-				failure_data = {"error": error_msg, "response": response_data}
-				integration_request.handle_failure(json.dumps(failure_data))
-				self.handle_failure(response_data)
-
 		except requests.exceptions.RequestException as e:
 			error_msg = f"API request failed: {e!s}"
-			failure_data = {"error": error_msg, "response": None}
-			integration_request.handle_failure(json.dumps(failure_data))
-			self._log_error(error_msg)
+			integration_request.handle_failure(json.dumps({"error": error_msg, "response": None}))
+			if request_never_left(e):
+				self._log_error(error_msg)
+			else:
+				self._mark_unconfirmed(error_msg)
+			return
+
+		try:
+			response_data = response.json()
+		except ValueError:
+			response_data = None
+
+		if 400 <= response.status_code < 500:
+			# The device refused the request (bad key, bad payload): nothing was signed.
+			body = response_data if isinstance(response_data, dict) else {}
+			error_msg = body.get("message") or f"TIMS refused the request (HTTP {response.status_code})."
+			integration_request.handle_failure(json.dumps({"error": error_msg, "response": response.text}))
+			self.handle_failure({**body, "message": error_msg})
+			return
+
+		if response.status_code >= 500 or not isinstance(response_data, dict):
+			error_msg = f"TIMS gave no usable answer (HTTP {response.status_code})."
+			integration_request.handle_failure(json.dumps({"error": error_msg, "response": response.text}))
+			self._mark_unconfirmed(error_msg)
+			return
+
+		if response.ok and response_data.get("description") == "Signed successfully.":
+			integration_request.handle_success(json.dumps(response_data))
+			self._update_invoice(response_data)
+			return
+
+		error_msg = response_data.get("error_status", "Unknown error")
+		integration_request.handle_failure(json.dumps({"error": error_msg, "response": response_data}))
+		self.handle_failure(response_data)
 
 	def _prepare_payload(self):
 		"""Prepare invoice data for TIMS API."""
@@ -124,7 +216,7 @@ class TimsInvoice:
 				"etr_serial_number": response_data.get("cu_serial_number"),
 				"etr_invoice_number": response_data.get("cu_invoice_number"),
 				"custom_verify_url": response_data.get("verify_url"),
-				"custom_signing_status": "Signed",
+				"custom_signing_status": SIGNED,
 				"custom_tims_response_description": response_data.get(
 					"message", "Invoice signed successfully."
 				),
@@ -138,49 +230,122 @@ class TimsInvoice:
 	def handle_failure(self, response_data):
 		"""Handle failed API response."""
 		frappe.log_error("Tims Error", f"Failed to sign invoice: {response_data.get('message')}")
-
-		frappe.db.set_value(
-			"Sales Invoice",
-			self.invoice.name,
-			{
-				"custom_signing_status": "Failed",
-				"custom_tims_response_description": response_data.get("message"),
-			},
-		)
+		self._set_status(FAILED, response_data.get("message"))
 
 	def _log_error(self, message):
 		"""Log API errors."""
 		frappe.log_error("TimsInvoice Error", f"TIMS API Error: {message}")
+		self._set_status(FAILED, message)
 
+	def _mark_unconfirmed(self, message):
+		"""The device may have signed the invoice: hold it for a check on TIMS, never a resend."""
+		frappe.log_error("TimsInvoice Unconfirmed", f"{self.invoice.name}: {message}")
+		self._set_status(
+			UNCONFIRMED,
+			_("Sent, but TIMS did not confirm ({0}). It will be checked on TIMS, not sent again.").format(
+				message
+			),
+		)
+
+	def _set_status(self, status, description):
 		frappe.db.set_value(
 			"Sales Invoice",
 			self.invoice.name,
-			{
-				"custom_signing_status": "Failed",
-				"custom_tims_response_description": message,
-			},
+			{"custom_signing_status": status, "custom_tims_response_description": description},
+			update_modified=False,
+		)
+
+	def check_on_tims(self):
+		"""For an Unconfirmed (or stale Submitting) invoice, ask TIMS whether it holds it.
+
+		Found with a CU invoice number: recorded as Signed. Anything else leaves it Unconfirmed with
+		the device's answer, for a person to check before choosing to send it again.
+		"""
+		stored = frappe.db.get_value(
+			"Sales Invoice",
+			self.invoice.name,
+			["custom_signing_status", "etr_invoice_number"],
+			as_dict=True,
+			for_update=True,
+		)
+		if stored.etr_invoice_number or stored.custom_signing_status not in (UNCONFIRMED, SUBMITTING):
+			return
+
+		result = query_tims(self.settings, self.invoice.invoice_number)
+		cu_invoice_number = first_of(result, "cu_invoice_number", "cu invoice number")
+		if result.get("status") == "00" and cu_invoice_number:
+			verify_url = first_of(result, "verify_url", "verify url")
+			frappe.db.set_value(
+				"Sales Invoice",
+				self.invoice.name,
+				{
+					"etr_invoice_number": cu_invoice_number,
+					"etr_serial_number": first_of(result, "cu_serial_number", "cu serial number"),
+					"custom_verify_url": verify_url,
+					"custom_qr_code": get_qr_code(verify_url) if verify_url else None,
+					"custom_signing_status": SIGNED,
+					"custom_tims_response_description": _("Found on TIMS after an unconfirmed send."),
+					"cu_invoice_date": frappe.utils.today(),
+					"is_filed": 1,
+				},
+				update_modified=False,
+			)
+			return
+
+		self._set_status(
+			UNCONFIRMED,
+			_(
+				"TIMS does not confirm this invoice (status {0}: {1}). Check the device before sending again."
+			).format(result.get("status"), result.get("description")),
 		)
 
 
-def enqueue_invoice_signing(invoice_name, company, *, enqueue_after_commit=False):
-	"""Queue TIMS signing for an invoice. Shared by submit, UI, and retry paths."""
+def request_never_left(error):
+	"""True when a requests error was raised before the request reached the device."""
+	if isinstance(error, NOT_SENT_ERRORS):
+		return True
+	if isinstance(error, requests.exceptions.ConnectionError) and error.args:
+		return isinstance(getattr(error.args[0], "reason", None), NewConnectionError)
+	return False
+
+
+def first_of(data, *keys):
+	for key in keys:
+		if data.get(key):
+			return data[key]
+	return None
+
+
+def enqueue_invoice_signing(invoice_name, company, *, enqueue_after_commit=False, allow_unconfirmed=False):
+	"""Queue TIMS signing for an invoice. Shared by submit, UI, and retry paths.
+
+	One job per invoice: a second request while one is queued or running is dropped.
+	"""
 	frappe.enqueue(
 		SEND_INVOICE_TO_TIMS,
 		enqueue_after_commit=enqueue_after_commit,
-		job_name=f"Sign Invoice {invoice_name}",
+		job_id=f"tims_incotex_sign_{invoice_name}",
+		deduplicate=True,
 		invoice_name=invoice_name,
 		company=company,
+		allow_unconfirmed=allow_unconfirmed,
 		queue="default",
 		timeout=300,
 	)
 
 
-def send_invoice_to_tims(invoice_name, company):
+def send_invoice_to_tims(invoice_name, company, allow_unconfirmed=False):
 	"""Background worker: load invoice and send it to TIMS."""
 	tims = TimsInvoice(invoice_name, company)
 	if not tims.can_sign():
 		return
-	tims._send_to_api()
+	allowed = (*SENDABLE, UNCONFIRMED) if allow_unconfirmed else SENDABLE
+	tims._send_to_api(allowed=allowed)
+
+
+def check_invoice_on_tims(invoice_name, company):
+	"""Background worker: ask TIMS about an Unconfirmed invoice."""
+	TimsInvoice(invoice_name, company).check_on_tims()
 
 
 def on_submit(doc, method):
@@ -191,25 +356,48 @@ def on_submit(doc, method):
 
 
 @frappe.whitelist()
-def sign_single_invoice(invoice_name, company):
-	"""Public function to trigger invoice signing."""
-	if is_active(company):
-		TimsInvoice(invoice_name, company).sign_invoice(enqueue_after_commit=True)
+def sign_single_invoice(invoice_name, company=None, send_unconfirmed=0):
+	"""Queue signing for one invoice, for a user who may submit it.
+
+	An Unconfirmed invoice is sent again only when the user asks for it explicitly
+	(`send_unconfirmed`), after checking the device.
+	"""
+	invoice = frappe.get_doc("Sales Invoice", invoice_name)
+	invoice.check_permission("submit")
+	if is_active(invoice.company):
+		enqueue_invoice_signing(
+			invoice.name,
+			invoice.company,
+			enqueue_after_commit=True,
+			allow_unconfirmed=bool(cint(send_unconfirmed)),
+		)
+
+
+@frappe.whitelist()
+def check_single_invoice(invoice_name):
+	"""Ask TIMS now about one Unconfirmed invoice."""
+	invoice = frappe.get_doc("Sales Invoice", invoice_name)
+	invoice.check_permission("submit")
+	TimsInvoice(invoice.name, invoice.company).check_on_tims()
 
 
 @frappe.whitelist()
 def retry_pending_invoices(batch_size=100):
-	"""Enqueue a limited batch of failed/unsigned invoices for TIMS signing.
+	"""Enqueue a limited batch of failed/unsigned invoices for TIMS signing, and a TIMS check for
+	unconfirmed ones (never a resend).
 
 	Avoids loading full Sales Invoice docs in the scheduler job so large
 	backlogs do not hit the RQ job timeout. Eligibility is re-checked in the worker.
 	"""
+	if "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Only a System Manager can retry TIMS submissions."), frappe.PermissionError)
+
 	pending_invoices = frappe.get_all(
 		"Sales Invoice",
 		filters={
 			"docstatus": 1,
 			"is_opening": "No",
-			"custom_signing_status": ["in", ["Failed", ""]],
+			"custom_signing_status": ["in", [FAILED, ""]],
 			"etr_invoice_number": ["in", ["", None]],
 		},
 		fields=["name", "company"],
@@ -218,30 +406,67 @@ def retry_pending_invoices(batch_size=100):
 	)
 
 	active_companies = {}
-	for inv in pending_invoices:
-		company = inv.company
+
+	def active(company):
 		if company not in active_companies:
 			active_companies[company] = bool(is_active(company))
+		return active_companies[company]
 
-		if not active_companies[company]:
-			continue
+	for inv in pending_invoices:
+		if active(inv.company):
+			enqueue_invoice_signing(inv.name, inv.company)
 
-		enqueue_invoice_signing(inv.name, company)
+	for inv in invoices_to_check_on_tims(cint(batch_size)):
+		if active(inv.company):
+			frappe.enqueue(
+				CHECK_INVOICE_ON_TIMS,
+				job_id=f"tims_incotex_check_{inv.name}",
+				deduplicate=True,
+				invoice_name=inv.name,
+				company=inv.company,
+				queue="default",
+				timeout=300,
+			)
 
 
-@frappe.whitelist()
-def get_invoice(invoice, company):
-	settings = get_tims_settings(company)
-	if not settings:
-		frappe.throw("TIMS settings not configured for this company.")
+def invoices_to_check_on_tims(limit):
+	"""Unconfirmed invoices, plus Submitting ones whose send started long enough ago to be dead."""
+	candidates = frappe.get_all(
+		"Sales Invoice",
+		filters={
+			"docstatus": 1,
+			"custom_signing_status": ["in", [UNCONFIRMED, SUBMITTING]],
+			"etr_invoice_number": ["in", ["", None]],
+		},
+		fields=["name", "company", "custom_signing_status"],
+		order_by="modified desc",
+		limit_page_length=limit,
+	)
+	cutoff = add_to_date(now_datetime(), minutes=-STALE_SUBMITTING_MINUTES)
+	due = []
+	for inv in candidates:
+		if inv.custom_signing_status == SUBMITTING:
+			last_sent = frappe.db.get_value(
+				"Integration Request",
+				{"reference_doctype": "Sales Invoice", "reference_docname": inv.name},
+				"creation",
+				order_by="creation desc",
+			)
+			if last_sent and last_sent > cutoff:
+				continue
+		due.append(inv)
+	return due
 
+
+def query_tims(settings, invoice_number):
+	"""Ask the device about one invoice, by the invoice number it was signed with."""
 	url = settings.get("api_url") + settings.get("query_endpoint")
 	headers = {
 		"Content-Type": "application/json",
 		"Authorization": f"Basic {settings['api_key']}",
 	}
 	payload = {
-		"invoice_number": invoice,
+		"invoice_number": invoice_number,
 		"username": settings.get("username"),
 		"password": settings.get("password"),
 	}
@@ -249,24 +474,37 @@ def get_invoice(invoice, company):
 	try:
 		response = requests.post(url, json=payload, headers=headers, timeout=10)
 		response_data = response.json()
-
-		if response_data.get("status") != "00":
-			frappe.log_error(f"TIMS Query Failed: {response_data}", "TIMS Invoice Query")
-			return {
-				"message": "Query failed",
-				"status": response_data.get("status", "99"),
-				"description": response_data.get("description", "Unknown error"),
-			}
-
-		return response_data
-
-	except requests.exceptions.RequestException as e:
-		frappe.log_error(f"Failed to connect: {e!s}", "TIMS Health Check")
+	except (requests.exceptions.RequestException, ValueError) as e:
+		frappe.log_error(f"Failed to connect: {e!s}", "TIMS Invoice Query")
 		return {
 			"message": "Error",
 			"status": "99",
 			"description": f"Failed to connect: {e!s}",
 		}
+
+	if response_data.get("status") != "00":
+		frappe.log_error(f"TIMS Query Failed: {response_data}", "TIMS Invoice Query")
+	return response_data
+
+
+@frappe.whitelist()
+def get_invoice(invoice, company=None):
+	"""Query TIMS for an invoice the user may read. `invoice` is the Sales Invoice name; TIMS is asked
+	by the same `invoice_number` the invoice was signed with."""
+	doc = frappe.get_doc("Sales Invoice", invoice)
+	doc.check_permission("read")
+	settings = get_tims_settings(doc.company)
+	if not settings:
+		frappe.throw("TIMS settings not configured for this company.")
+
+	response_data = query_tims(settings, doc.invoice_number or re.sub(r"[^a-zA-Z0-9]", "", doc.name))
+	if response_data.get("status") != "00":
+		return {
+			"message": "Query failed",
+			"status": response_data.get("status", "99"),
+			"description": response_data.get("description", "Unknown error"),
+		}
+	return response_data
 
 
 def get_qr_code(data: str) -> str:
