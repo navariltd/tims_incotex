@@ -13,7 +13,7 @@ class TimsIncotexSettings(Document):
 
 
 @frappe.whitelist()
-def health_check(company):
+def health_check(company: str):
 	"""Checks the TIMS API health status"""
 	settings = get_tims_settings(company)
 	url = settings.get("api_url") + settings.get("health_check_endpoint")
