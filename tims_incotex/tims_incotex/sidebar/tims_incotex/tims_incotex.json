@@ -1,0 +1,102 @@
+{
+ "app": "tims_incotex",
+ "creation": "2026-02-06 16:14:45.140279",
+ "docstatus": 0,
+ "doctype": "Sidebar",
+ "header_icon": "receipt-text",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 0,
+   "icon": "layout-dashboard",
+   "idx": 1,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Dashboard",
+   "link_to": "TIMS Incotex Dashboard",
+   "link_type": "Dashboard",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 0,
+   "icon": "receipt-text",
+   "idx": 2,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Sales Invoices",
+   "link_to": "Sales Invoice",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 0,
+   "idx": 3,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Configuration",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "settings",
+   "idx": 4,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Settings",
+   "link_to": "Tims Incotex Settings",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "list",
+   "idx": 5,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Item Tax Template",
+   "link_to": "Item Tax Template",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 0,
+   "idx": 6,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Logs",
+   "show_arrow": 0,
+   "type": "Section Break"
+  },
+  {
+   "child": 1,
+   "collapsible": 0,
+   "icon": "plug",
+   "idx": 7,
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Integration Requests",
+   "link_to": "Integration Request",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-02-06 16:55:02.907342",
+ "modified_by": "emiliocliff@gmail.com",
+ "module": "Tims Incotex",
+ "name": "Tims Incotex",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Tims Incotex"
+}

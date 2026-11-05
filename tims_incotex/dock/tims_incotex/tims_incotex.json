@@ -1,0 +1,17 @@
+{
+ "app": "tims_incotex",
+ "doctype": "Dock",
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "receipt-text",
+   "link_to": "Tims Incotex",
+   "link_type": "Sidebar",
+   "title": "TIMS Incotex"
+  }
+ ],
+ "name": "tims_incotex",
+ "standard": 1,
+ "user": ""
+}
