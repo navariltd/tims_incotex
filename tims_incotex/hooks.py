@@ -1,5 +1,5 @@
 app_name = "tims_incotex"
-app_title = "Tims Incotex"
+app_title = "TIMS Incotex"
 app_publisher = "Navari Limited"
 app_description = "Incotex third party Tims integrator"
 app_email = "support@navari.co.ke"
@@ -9,20 +9,20 @@ app_license = "agpl-3.0"
 # ------------------
 
 required_apps = ["erpnext", "csf_ke"]
+app_logo_url = "/assets/tims_incotex/images/logo.svg"
 
 # fixtures = []
 
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "tims_incotex",
-# 		"logo": "/assets/tims_incotex/logo.png",
-# 		"title": "Tims Incotex",
-# 		"route": "/tims_incotex",
-# 		"has_permission": "tims_incotex.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "tims_incotex",
+		"logo": "/assets/tims_incotex/images/logo.svg",
+		"title": "TIMS Incotex",
+		"route": "/desk/tims-incotex/dashboard-view/TIMS%20Incotex%20Dashboard",
+		"has_permission": "tims_incotex.permissions.check_app_permission",
+	},
+]
 
 # Includes in <head>
 # ------------------
