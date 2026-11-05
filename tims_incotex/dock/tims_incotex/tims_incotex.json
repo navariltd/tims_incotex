@@ -1,0 +1,19 @@
+{
+ "app": "tims_incotex",
+ "doctype": "Dock",
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "scan-qr-code",
+   "link_to": "TIMS Incotex",
+   "link_type": "Sidebar",
+   "title": "TIMS Incotex"
+  }
+ ],
+ "modified": "2026-11-05 12:00:00.000000",
+ "mount_on": "",
+ "name": "tims_incotex",
+ "standard": 1,
+ "user": ""
+}
