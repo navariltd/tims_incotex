@@ -14,15 +14,9 @@ required_apps = ["erpnext", "csf_ke"]
 
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "tims_incotex",
-# 		"logo": "/assets/tims_incotex/logo.png",
-# 		"title": "Tims Incotex",
-# 		"route": "/tims_incotex",
-# 		"has_permission": "tims_incotex.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{"name": app_name, "logo": "/assets/tims_incotex/images/tims-incotex-logo.png", "title": "Tims Incotex"}
+]
 
 # Includes in <head>
 # ------------------
